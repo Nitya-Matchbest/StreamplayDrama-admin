@@ -372,7 +372,7 @@
         destroyEditEditor();
 
         try {
-            const res  = await fetchWithRetry(`${API_URL}/${id}`);
+            const res  = await fetchWithRetry(`${API_URL}/id/${id}`);
             const data = await res.json();
             if (!data.success) throw new Error(data.message);
             const blog = data.data;
