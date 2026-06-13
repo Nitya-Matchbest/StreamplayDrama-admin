@@ -180,8 +180,26 @@
     </div>
 
     <script>
-    const API_BASE = 'http://localhost:5001';
+    const API_BASE = 'https://streamplaydrama-backend.onrender.com';
     const API_URL  = `${API_BASE}/api/blogs`;
+
+    // Retry fetch to handle Render.com cold-start
+    async function fetchWithRetry(url, opts = {}, retries = 3, onRetry = null) {
+        let lastErr;
+        for (let i = 1; i <= retries; i++) {
+            try {
+                const ctrl = new AbortController();
+                const tid  = setTimeout(() => ctrl.abort(), 30000);
+                const res  = await fetch(url, { ...opts, signal: ctrl.signal });
+                clearTimeout(tid);
+                return res;
+            } catch (e) {
+                lastErr = e;
+                if (i < retries) { if (onRetry) onRetry(i); await new Promise(r => setTimeout(r, i * 3000)); }
+            }
+        }
+        throw lastErr;
+    }
 
     let allBlogs    = [];
     let filtered    = [];
@@ -221,7 +239,7 @@
     async function loadBlogs() {
         document.getElementById('blogsContainer').innerHTML = '<div class="loading">⏳ Loading posts…</div>';
         try {
-            const res  = await fetch(API_URL);
+            const res  = await fetchWithRetry(API_URL);
             const data = await res.json();
             if (data.success) {
                 allBlogs = data.data;
@@ -229,12 +247,13 @@
                 applyFilters();
             } else throw new Error(data.message);
         } catch (err) {
+            const isNet = err.name === 'AbortError' || err.message === 'Failed to fetch';
             document.getElementById('blogsContainer').innerHTML = `
                 <div class="workspace-card">
                     <div class="no-blogs">
                         <div class="no-blogs-icon">⚠️</div>
                         <h3>Connection Error</h3>
-                        <p>${err.message}</p>
+                        <p>${isNet ? 'Cannot reach the server. It may be starting up — wait 30 seconds and retry.' : err.message}</p>
                         <button class="btn btn-primary" onclick="loadBlogs()">Retry</button>
                     </div>
                 </div>`;
@@ -334,7 +353,7 @@
     async function confirmDelete() {
         if (!deleteTarget) return;
         try {
-            const res  = await fetch(`${API_URL}/${deleteTarget}`, { method: 'DELETE' });
+            const res  = await fetchWithRetry(`${API_URL}/${deleteTarget}`, { method: 'DELETE' });
             const data = await res.json();
             if (data.success) { closeDeleteModal(); loadBlogs(); }
             else throw new Error(data.message);
@@ -353,7 +372,7 @@
         destroyEditEditor();
 
         try {
-            const res  = await fetch(`${API_URL}/${id}`);
+            const res  = await fetchWithRetry(`${API_URL}/${id}`);
             const data = await res.json();
             if (!data.success) throw new Error(data.message);
             const blog = data.data;
@@ -421,11 +440,10 @@
         };
 
         try {
-            const res  = await fetch(`${API_URL}/${editTarget}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            const res  = await fetchWithRetry(
+                `${API_URL}/${editTarget}`,
+                { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
+            );
             const data = await res.json();
             if (data.success) {
                 document.getElementById('editSuccess').style.display = 'block';

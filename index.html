@@ -177,9 +177,27 @@
     </div>
 
     <script>
-    const API_BASE   = 'http://localhost:5001';
+    const API_BASE   = 'https://streamplaydrama-backend.onrender.com';
     const API_URL    = `${API_BASE}/api/blogs`;
     const UPLOAD_URL = `${API_BASE}/api/upload`;
+
+    // Retry fetch to handle Render.com cold-start
+    async function fetchWithRetry(url, opts = {}, retries = 3, onRetry = null) {
+        let lastErr;
+        for (let i = 1; i <= retries; i++) {
+            try {
+                const ctrl = new AbortController();
+                const tid  = setTimeout(() => ctrl.abort(), 30000);
+                const res  = await fetch(url, { ...opts, signal: ctrl.signal });
+                clearTimeout(tid);
+                return res;
+            } catch (e) {
+                lastErr = e;
+                if (i < retries) { if (onRetry) onRetry(i); await new Promise(r => setTimeout(r, i * 3000)); }
+            }
+        }
+        throw lastErr;
+    }
 
     const tags = [];
     let editor = null;   // single CKEditor instance
@@ -253,7 +271,12 @@
         try {
             const fd = new FormData();
             fd.append('image', file);
-            const res  = await fetch(UPLOAD_URL, { method: 'POST', body: fd });
+            const res  = await fetchWithRetry(
+                UPLOAD_URL,
+                { method: 'POST', body: fd },
+                3,
+                (attempt) => { status.textContent = `⏳ Server waking up… retry ${attempt}/2`; }
+            );
             const data = await res.json();
             if (data.success) {
                 document.getElementById('featuredImage').value = data.data.url;
@@ -265,9 +288,10 @@
                 setTimeout(() => { btn.textContent = '⬆️ Upload'; status.textContent = data.data.filename; }, 3000);
             } else throw new Error(data.message || 'Upload failed');
         } catch (err) {
+            const isNet = err.name === 'AbortError' || err.message === 'Failed to fetch';
             status.textContent = '❌ Failed'; status.style.color = '#DC2626';
             btn.textContent = '⬆️ Upload'; btn.disabled = false;
-            alert('Upload error: ' + err.message);
+            alert(isNet ? 'Server unreachable. It may be starting up — wait 30 seconds and try again.' : 'Upload error: ' + err.message);
         }
     }
 
@@ -319,11 +343,12 @@
         btn.disabled = true; btn.textContent = '⏳ Publishing…';
 
         try {
-            const res  = await fetch(API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            const res  = await fetchWithRetry(
+                API_URL,
+                { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
+                3,
+                () => { btn.textContent = '⏳ Server waking up…'; }
+            );
             const data = await res.json();
             if (data.success) {
                 document.getElementById('successMessage').style.display = 'block';
@@ -332,7 +357,8 @@
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             } else throw new Error(data.message || 'Create failed');
         } catch (err) {
-            document.getElementById('errorMessage').textContent = '❌ ' + err.message;
+            const isNet = err.name === 'AbortError' || err.message === 'Failed to fetch';
+            document.getElementById('errorMessage').textContent = '❌ ' + (isNet ? 'Server unreachable. Wait 30 seconds and try again.' : err.message);
             document.getElementById('errorMessage').style.display   = 'block';
             document.getElementById('successMessage').style.display = 'none';
             window.scrollTo({ top: 0, behavior: 'smooth' });
