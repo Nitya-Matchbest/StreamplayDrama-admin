@@ -144,20 +144,40 @@
                         <label>Excerpt <span class="required">*</span></label>
                         <textarea id="editExcerpt" rows="2" required></textarea>
                     </div>
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
-                        <div class="form-group" style="margin-bottom:0;">
-                            <label>Category</label>
-                            <select id="editCategory">
-                                <option value="Drama Series">Drama Series</option>
-                                <option value="Latest Article">Latest Article</option>
-                                <option value="Entertainment">Entertainment</option>
-                                <option value="Industry Trends">Industry Trends</option>
-                                <option value="Reviews">Reviews</option>
-                            </select>
+                    <div class="form-group">
+                        <label>Category</label>
+                        <select id="editCategory">
+                            <option value="Drama Series">Drama Series</option>
+                            <option value="Latest Article">Latest Article</option>
+                            <option value="Entertainment">Entertainment</option>
+                            <option value="Industry Trends">Industry Trends</option>
+                            <option value="Reviews">Reviews</option>
+                        </select>
+                    </div>
+
+                    <!-- Featured Image Upload -->
+                    <div class="workspace-card" style="padding:18px; margin-bottom:16px;">
+                        <div class="workspace-card-title" style="margin-bottom:12px;">
+                            <span class="card-dot"></span> Featured Image
                         </div>
-                        <div class="form-group" style="margin-bottom:0;">
-                            <label>Featured Image URL</label>
-                            <input type="text" id="editFeaturedImage">
+                        <div class="upload-btn-container">
+                            <input type="file" id="editImageFile" accept="image/*" style="display:none;">
+                            <button type="button" class="btn btn-secondary"
+                                    onclick="document.getElementById('editImageFile').click()">
+                                📁 Choose File
+                            </button>
+                            <button type="button" class="btn btn-primary" id="editUploadBtn"
+                                    onclick="uploadEditImage()" disabled>
+                                ⬆️ Upload
+                            </button>
+                            <span id="editUploadStatus"></span>
+                        </div>
+                        <input type="text" id="editFeaturedImage" readonly
+                               placeholder="Image URL will appear here after upload"
+                               style="background:var(--bg-card); cursor:not-allowed; margin-top:10px;">
+                        <div class="help-text">Max 5 MB — JPEG / PNG / GIF / WebP. Leave blank to keep existing image.</div>
+                        <div class="image-preview-box" id="editImagePreview" style="display:none; margin-top:10px;">
+                            <img id="editPreviewImg" alt="Preview" style="max-width:100%; border-radius:8px;">
                         </div>
                     </div>
 
@@ -180,8 +200,9 @@
     </div>
 
     <script>
-    const API_BASE = 'https://streamplaydrama-backend.onrender.com';
-    const API_URL  = `${API_BASE}/api/blogs`;
+    const API_BASE   = 'https://streamplaydrama-backend.onrender.com';
+    const API_URL    = `${API_BASE}/api/blogs`;
+    const UPLOAD_URL = `${API_BASE}/api/upload`;
 
     // Retry fetch to handle Render.com cold-start
     async function fetchWithRetry(url, opts = {}, retries = 3, onRetry = null) {
@@ -368,6 +389,12 @@
         document.getElementById('editSuccess').style.display = 'none';
         document.getElementById('editError').style.display   = 'none';
 
+        // Reset upload widget
+        document.getElementById('editImageFile').value        = '';
+        document.getElementById('editUploadBtn').disabled     = true;
+        document.getElementById('editUploadStatus').textContent = '';
+        document.getElementById('editImagePreview').style.display = 'none';
+
         // Destroy previous editor instance if any
         destroyEditEditor();
 
@@ -380,7 +407,17 @@
             document.getElementById('editTitle').value         = blog.title || '';
             document.getElementById('editExcerpt').value       = blog.excerpt || '';
             document.getElementById('editCategory').value      = blog.category || '';
+            // Show existing image URL (readonly — user uploads a new one to change it)
             document.getElementById('editFeaturedImage').value = blog.featuredImage || '';
+
+            // Show existing image preview if URL exists
+            if (blog.featuredImage) {
+                const src = blog.featuredImage.startsWith('/api/image/')
+                    ? API_BASE + blog.featuredImage
+                    : blog.featuredImage;
+                document.getElementById('editPreviewImg').src = src;
+                document.getElementById('editImagePreview').style.display = 'block';
+            }
 
             // Build body content from new format OR legacy sections
             let bodyContent = '';
@@ -424,6 +461,11 @@
         destroyEditEditor();
         editTarget = null;
         document.getElementById('editModal').style.display = 'none';
+        // Reset upload widget on close
+        document.getElementById('editImageFile').value          = '';
+        document.getElementById('editUploadBtn').disabled       = true;
+        document.getElementById('editUploadStatus').textContent = '';
+        document.getElementById('editImagePreview').style.display = 'none';
     }
 
     async function saveEdit() {
@@ -461,6 +503,59 @@
         if (e.target.id === 'deleteModal') closeDeleteModal();
         if (e.target.id === 'editModal')   closeEditModal();
     });
+
+    // ─────────────────────────────────────────────
+    // EDIT IMAGE UPLOAD
+    // ─────────────────────────────────────────────
+    document.getElementById('editImageFile').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        document.getElementById('editUploadBtn').disabled = !file;
+        document.getElementById('editUploadStatus').textContent = file ? `Selected: ${file.name}` : '';
+        document.getElementById('editUploadStatus').style.color = '#F5A623';
+    });
+
+    async function uploadEditImage() {
+        const fileInput = document.getElementById('editImageFile');
+        const file = fileInput.files[0];
+        if (!file) return alert('Please choose an image first');
+        if (file.size > 5 * 1024 * 1024) return alert('File must be under 5 MB');
+
+        const btn    = document.getElementById('editUploadBtn');
+        const status = document.getElementById('editUploadStatus');
+        btn.disabled = true;
+        btn.textContent = '⏳ Uploading…';
+        status.textContent = 'Uploading…';
+        status.style.color = '#F5A623';
+
+        try {
+            const fd = new FormData();
+            fd.append('image', file);
+
+            const res = await fetchWithRetry(
+                UPLOAD_URL,
+                { method: 'POST', body: fd },
+                3,
+                (attempt) => { status.textContent = `⏳ Server waking up… retry ${attempt}/2`; }
+            );
+            const data = await res.json();
+
+            if (data.success) {
+                document.getElementById('editFeaturedImage').value = data.data.url;
+                const imgSrc = API_BASE + data.data.url;
+                document.getElementById('editPreviewImg').src = imgSrc;
+                document.getElementById('editImagePreview').style.display = 'block';
+                status.textContent = '✅ Uploaded!';
+                status.style.color = '#10B981';
+                btn.textContent = '✅ Done';
+                setTimeout(() => { btn.textContent = '⬆️ Upload'; status.textContent = data.data.filename; }, 3000);
+            } else throw new Error(data.message || 'Upload failed');
+        } catch (err) {
+            const isNet = err.name === 'AbortError' || err.message === 'Failed to fetch';
+            status.textContent = '❌ Failed'; status.style.color = '#DC2626';
+            btn.textContent = '⬆️ Upload'; btn.disabled = false;
+            alert(isNet ? 'Server unreachable. Wait 30 seconds and try again.' : 'Upload error: ' + err.message);
+        }
+    }
 
     // ─────────────────────────────────────────────
     // INIT
