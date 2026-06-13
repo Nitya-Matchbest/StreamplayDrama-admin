@@ -3,6 +3,31 @@ const API_BASE = 'https://streamplaydrama-backend.onrender.com';
 const API_URL = `${API_BASE}/api/blogs`;
 const UPLOAD_URL = `${API_BASE}/api/upload`;
 
+/**
+ * Fetch with automatic retry — handles Render.com free-tier cold starts.
+ * Retries up to `maxRetries` times with increasing delays.
+ */
+async function fetchWithRetry(url, options = {}, maxRetries = 3, onWakeUp = null) {
+    let lastError;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+            const response = await fetch(url, { ...options, signal: controller.signal });
+            clearTimeout(timeoutId);
+            return response;
+        } catch (err) {
+            lastError = err;
+            if (attempt < maxRetries) {
+                if (onWakeUp) onWakeUp(attempt);
+                // Wait longer on each retry (3s, 6s)
+                await new Promise(res => setTimeout(res, attempt * 3000));
+            }
+        }
+    }
+    throw lastError;
+}
+
 let sectionCount = 0;
 const tags = [];
 
@@ -46,10 +71,15 @@ async function uploadImage() {
         const formData = new FormData();
         formData.append('image', file);
 
-        const response = await fetch(UPLOAD_URL, {
-            method: 'POST',
-            body: formData
-        });
+        const response = await fetchWithRetry(
+            UPLOAD_URL,
+            { method: 'POST', body: formData },
+            3,
+            (attempt) => {
+                uploadStatus.textContent = `⏳ Server is waking up… retrying (${attempt}/2)`;
+                uploadStatus.style.color = '#F59E0B';
+            }
+        );
 
         const result = await response.json();
 
@@ -78,11 +108,15 @@ async function uploadImage() {
         }
     } catch (error) {
         console.error('Upload error:', error);
+        const isNetworkError = error.name === 'AbortError' || error.message === 'Failed to fetch';
+        const userMsg = isNetworkError
+            ? 'Cannot reach the server. It may be starting up — please wait 30 seconds and try again.'
+            : error.message;
         uploadStatus.textContent = '❌ Upload failed';
         uploadStatus.style.color = '#DC2626';
         uploadBtn.textContent = '⬆️ Upload';
         uploadBtn.disabled = false;
-        alert('Failed to upload image: ' + error.message);
+        alert('Upload failed: ' + userMsg);
     }
 }
 
@@ -190,13 +224,21 @@ document.getElementById('blogForm').addEventListener('submit', async (e) => {
     };
 
     try {
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
+        const submitBtn = e.target.querySelector('[type="submit"]') || e.submitter;
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '⏳ Publishing…'; }
+
+        const response = await fetchWithRetry(
+            API_URL,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(blogData)
             },
-            body: JSON.stringify(blogData)
-        });
+            3,
+            () => {
+                if (submitBtn) submitBtn.textContent = '⏳ Server waking up…';
+            }
+        );
 
         const result = await response.json();
 
@@ -222,10 +264,17 @@ document.getElementById('blogForm').addEventListener('submit', async (e) => {
             throw new Error(result.message || 'Failed to create blog');
         }
     } catch (error) {
-        document.getElementById('errorMessage').textContent = '❌ Error: ' + error.message;
+        const isNetworkError = error.name === 'AbortError' || error.message === 'Failed to fetch';
+        const userMsg = isNetworkError
+            ? 'Cannot reach the server. It may be starting up — please wait 30 seconds and try again.'
+            : error.message;
+        document.getElementById('errorMessage').textContent = '❌ Error: ' + userMsg;
         document.getElementById('errorMessage').style.display = 'block';
         document.getElementById('successMessage').style.display = 'none';
         window.scrollTo(0, 0);
+    } finally {
+        const submitBtn = e.target.querySelector('[type="submit"]') || e.submitter;
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '🚀 Publish Blog'; }
     }
 });
 
