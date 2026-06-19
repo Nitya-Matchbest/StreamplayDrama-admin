@@ -12,22 +12,22 @@
 }
 
 :root {
-    --bg-deep:    #080812;
-    --bg-dark:    #0D0D1A;
+    --bg-deep:    #010F29;
+    --bg-dark:    #010F29;
     --bg-card:    #12121F;
     --surface:    #1A1A2E;
     --surface-2:  #1F1F32;
     --border:     #2A2A3E;
     --border-light: rgba(255,255,255,0.06);
-    --primary:    #A30000;
-    --primary-hover: #C00000;
+    --primary:    #822AEE;
+    --primary-hover: #581C87;
     --accent:     #F5A623;
     --text-primary:   #FFFFFF;
     --text-secondary: #9CA3AF;
     --text-muted:     #6B7280;
     --green:      #10B981;
     --red-alert:  #DC2626;
-    --shadow:     rgba(163,0,0,0.25);
+    --shadow:     rgba(130,42,238,0.25);
 }
 
 body {
@@ -403,14 +403,14 @@ textarea {
 }
 
 .btn-primary {
-    background: var(--primary);
+    background: linear-gradient(135deg, #581C87, #3B0764);
     color: white;
 }
 
 .btn-primary:hover {
-    background: var(--primary-hover);
+    background: linear-gradient(135deg, #6c23a5, #48097b);
     transform: translateY(-1px);
-    box-shadow: 0 6px 20px rgba(163, 0, 0, 0.35);
+    box-shadow: 0 6px 20px rgba(88, 28, 135, 0.35);
 }
 
 .btn-secondary {
@@ -442,6 +442,28 @@ textarea {
 
 .btn-danger:hover {
     background: #B91C1C;
+}
+
+.btn-logout {
+    background: transparent;
+    color: var(--red-alert);
+    border: 1.5px solid var(--red-alert);
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    margin-left: 15px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-logout:hover {
+    background: var(--red-alert);
+    color: white;
+    box-shadow: 0 4px 15px rgba(220, 38, 38, 0.3);
 }
 
 .button-group {

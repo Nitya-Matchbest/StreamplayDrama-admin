@@ -34,6 +34,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
         if (response.ok && data.success) {
             // Store token
             localStorage.setItem('drama_admin_token', data.token);
+            localStorage.setItem('drama_admin_email', email);
             // Redirect
             window.location.href = 'index.html';
         } else {

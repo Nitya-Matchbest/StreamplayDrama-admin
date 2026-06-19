@@ -26,6 +26,13 @@
         // Network error, maybe allow them to stay if it's a transient issue
         console.warn('Could not verify token with backend.');
     });
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const emailEl = document.getElementById('loggedInEmail');
+        if (emailEl) {
+            emailEl.textContent = localStorage.getItem('drama_admin_email') || 'Admin';
+        }
+    });
 })();
 
 // Function to attach token to headers for fetch requests
